@@ -1,5 +1,6 @@
 import { getDb } from '../config/firebase-admin-config.js';
 import { Timestamp } from 'firebase-admin/firestore';
+import { FirestoreMessage } from '../types/firestore.js';
 
 interface Message {
   id?: string;
@@ -23,7 +24,8 @@ export const saveMessage = async (
 ): Promise<Message> => {
   const db = getDb();
 
-  const message: Omit<Message, 'id'> = {
+  // Save message to Firestore
+  const messageData: FirestoreMessage = {
     chatId,
     senderId,
     senderRole,
@@ -32,9 +34,9 @@ export const saveMessage = async (
     createdAt: Timestamp.now(),
   };
 
-  const docRef = await db.collection('messages').add(message);
+  const docRef = await db.collection('messages').add(messageData);
 
-  return { id: docRef.id, ...message };
+  return { id: docRef.id, ...messageData };
 };
 
 export const getMessages = async (

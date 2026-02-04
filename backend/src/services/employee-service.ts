@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getDb } from '../config/firebase-admin-config.js';
 import { Timestamp } from 'firebase-admin/firestore';
+import { FirestoreEmployee, FirestoreUser } from '../types/firestore.js';
 
 interface CreateEmployeeInput {
   name: string;
@@ -32,16 +33,18 @@ export const createEmployee = async (input: CreateEmployeeInput) => {
   const setupToken = generateSetupToken();
 
   // Create user record for employee
-  const userRef = await db.collection('users').add({
+  const userData: FirestoreUser = {
     email: input.email,
     role: 'employee',
     name: input.name,
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
-  });
+  };
+
+  const userRef = await db.collection('users').add(userData);
 
   // Create employee record
-  const employeeRef = await db.collection('employees').add({
+  const employeeData: FirestoreEmployee = {
     userId: userRef.id,
     name: input.name,
     email: input.email,
@@ -56,7 +59,9 @@ export const createEmployee = async (input: CreateEmployeeInput) => {
     ),
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
-  });
+  };
+
+  const employeeRef = await db.collection('employees').add(employeeData);
 
   return { employeeId: employeeRef.id, setupToken };
 };

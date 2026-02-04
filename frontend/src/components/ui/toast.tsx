@@ -33,7 +33,7 @@ interface ToastItem {
 }
 
 export function Toaster() {
-    const [toasts, setToasts] = useState<ToastItem[]>([]);
+    const [toasts, _setToasts] = useState<ToastItem[]>([]);
 
     useEffect(() => {
         // This is a simple toaster implementation

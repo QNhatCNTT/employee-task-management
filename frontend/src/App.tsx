@@ -1,44 +1,20 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/auth-context';
+import { ToastProvider } from './contexts/toast-context';
 import { ProtectedRoute } from './components/protected-route';
 import { HomePage } from './pages/home-page';
 import { ManagerLoginPage } from './pages/manager-login-page';
 import { EmployeeLoginPage } from './pages/employee-login-page';
 import { OtpVerifyPage } from './pages/otp-verify-page';
 import { EmployeeSetupPage } from './pages/employee-setup-page';
-
-// Placeholder components for future phases
-const ManagerDashboardPage = () => (
-  <div className="min-h-screen bg-gray-100 p-8">
-    <h1 className="text-2xl font-bold">Manager Dashboard</h1>
-    <p className="text-gray-600">Coming soon...</p>
-  </div>
-);
-
-const EmployeeDashboardPage = () => (
-  <div className="min-h-screen bg-gray-100 p-8">
-    <h1 className="text-2xl font-bold">Employee Dashboard</h1>
-    <p className="text-gray-600">Coming soon...</p>
-  </div>
-);
-
-const ManagerChatPage = () => (
-  <div className="min-h-screen bg-gray-100 p-8">
-    <h1 className="text-2xl font-bold">Manager Chat</h1>
-    <p className="text-gray-600">Coming soon...</p>
-  </div>
-);
-
-const EmployeeChatPage = () => (
-  <div className="min-h-screen bg-gray-100 p-8">
-    <h1 className="text-2xl font-bold">Employee Chat</h1>
-    <p className="text-gray-600">Coming soon...</p>
-  </div>
-);
+import { ManagerDashboardPage } from './pages/manager-dashboard-page';
+import { EmployeeDashboardPage } from './pages/employee-dashboard-page';
+import { ChatPage } from './pages/chat-page';
 
 function App() {
   return (
-    <AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
       <BrowserRouter>
         <Routes>
           {/* Public Routes */}
@@ -61,7 +37,7 @@ function App() {
             path="/dashboard/chat"
             element={
               <ProtectedRoute allowedRoles={['manager']}>
-                <ManagerChatPage />
+                <ChatPage />
               </ProtectedRoute>
             }
           />
@@ -79,7 +55,7 @@ function App() {
             path="/employee/chat"
             element={
               <ProtectedRoute allowedRoles={['employee']}>
-                <EmployeeChatPage />
+                <ChatPage />
               </ProtectedRoute>
             }
           />
@@ -88,7 +64,8 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
-    </AuthProvider>
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 

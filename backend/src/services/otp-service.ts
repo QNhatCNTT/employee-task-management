@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getDb } from '../config/firebase-admin-config.js';
 import { Timestamp } from 'firebase-admin/firestore';
+import { FirestoreUser, FirestoreAuth } from '../types/firestore.js';
 
 const OTP_EXPIRY_MINUTES = 5;
 
@@ -30,25 +31,36 @@ export const saveOtp = async (
     .limit(1)
     .get();
 
+  let userId: string;
+
   if (snapshot.empty) {
     // Create new manager user
-    await usersRef.add({
+    const userData: FirestoreUser = {
       phoneNumber,
       role: 'manager',
       name: '',
-      accessCode: hashedOtp,
-      accessCodeExpiry: expiry,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-    });
+    };
+    const newUser = await usersRef.add(userData);
+    userId = newUser.id;
   } else {
-    // Update existing user
-    await snapshot.docs[0].ref.update({
-      accessCode: hashedOtp,
-      accessCodeExpiry: expiry,
-      updatedAt: Timestamp.now(),
-    });
+    // User exists
+    userId = snapshot.docs[0].id;
   }
+
+  // Save OTP to auth_codes collection linked to userId
+  const authData: FirestoreAuth = {
+    userId,
+    phoneNumber,
+    accessCode: hashedOtp,
+    accessCodeExpiry: expiry,
+    attempts: 0,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  };
+
+  await db.collection('auth_codes').doc(userId).set(authData);
 };
 
 export const verifyOtp = async (
@@ -68,25 +80,30 @@ export const verifyOtp = async (
     return { valid: false };
   }
 
-  const doc = snapshot.docs[0];
-  const data = doc.data();
+  const userId = snapshot.docs[0].id;
 
-  if (data.accessCode !== hashedOtp) {
+  // Check auth_codes collection
+  const authDoc = await db.collection('auth_codes').doc(userId).get();
+
+  if (!authDoc.exists) {
     return { valid: false };
   }
 
-  if (data.accessCodeExpiry && data.accessCodeExpiry.toDate() < new Date()) {
+  const authData = authDoc.data() as FirestoreAuth;
+
+  if (authData.accessCode !== hashedOtp) {
+    // Increment attempts? (Feature for later)
+    return { valid: false };
+  }
+
+  if (authData.accessCodeExpiry.toDate() < new Date()) {
     return { valid: false }; // Expired
   }
 
   // Clear OTP after successful verification
-  await doc.ref.update({
-    accessCode: '',
-    accessCodeExpiry: null,
-    updatedAt: Timestamp.now(),
-  });
+  await authDoc.ref.delete();
 
-  return { valid: true, userId: doc.id };
+  return { valid: true, userId };
 };
 
 // Email OTP methods (for employees)
@@ -110,11 +127,20 @@ export const saveOtpByEmail = async (
     throw new Error('User not found');
   }
 
-  await snapshot.docs[0].ref.update({
+  const userId = snapshot.docs[0].id;
+
+  // Save OTP to auth_codes collection
+  const authData: FirestoreAuth = {
+    userId,
+    email,
     accessCode: hashedOtp,
     accessCodeExpiry: expiry,
+    attempts: 0,
+    createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
-  });
+  };
+
+  await db.collection('auth_codes').doc(userId).set(authData);
 };
 
 export const verifyOtpByEmail = async (
@@ -134,22 +160,27 @@ export const verifyOtpByEmail = async (
     return { valid: false };
   }
 
-  const doc = snapshot.docs[0];
-  const data = doc.data();
+  const userId = snapshot.docs[0].id;
 
-  if (data.accessCode !== hashedOtp) {
+  // Check auth_codes collection
+  const authDoc = await db.collection('auth_codes').doc(userId).get();
+
+  if (!authDoc.exists) {
     return { valid: false };
   }
 
-  if (data.accessCodeExpiry && data.accessCodeExpiry.toDate() < new Date()) {
+  const authData = authDoc.data() as FirestoreAuth;
+
+  if (authData.accessCode !== hashedOtp) {
     return { valid: false };
   }
 
-  await doc.ref.update({
-    accessCode: '',
-    accessCodeExpiry: null,
-    updatedAt: Timestamp.now(),
-  });
+  if (authData.accessCodeExpiry.toDate() < new Date()) {
+    return { valid: false };
+  }
 
-  return { valid: true, userId: doc.id };
+  // Clear OTP
+  await authDoc.ref.delete();
+
+  return { valid: true, userId };
 };
