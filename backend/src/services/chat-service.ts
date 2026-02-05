@@ -1,16 +1,6 @@
-import { getDb } from '../config/firebase-admin-config.js';
+import { messageEntity, MessageDocument } from '../entities/message.entity';
+import { getDb } from '../config/firebase-admin-config';
 import { Timestamp } from 'firebase-admin/firestore';
-import { FirestoreMessage } from '../types/firestore.js';
-
-interface Message {
-  id?: string;
-  chatId: string;
-  senderId: string;
-  senderRole: 'manager' | 'employee';
-  content: string;
-  read: boolean;
-  createdAt: Timestamp;
-}
 
 export const getChatId = (managerId: string, employeeId: string): string => {
   return [managerId, employeeId].sort().join('_');
@@ -21,29 +11,22 @@ export const saveMessage = async (
   senderId: string,
   senderRole: 'manager' | 'employee',
   content: string
-): Promise<Message> => {
-  const db = getDb();
-
-  // Save message to Firestore
-  const messageData: FirestoreMessage = {
+): Promise<MessageDocument> => {
+  const messageId = await messageEntity.createMessage(
     chatId,
     senderId,
     senderRole,
-    content,
-    read: false,
-    createdAt: Timestamp.now(),
-  };
+    content
+  );
 
-  const docRef = await db.collection('messages').add(messageData);
-
-  return { id: docRef.id, ...messageData };
+  return messageEntity.findById(messageId) as Promise<MessageDocument>;
 };
 
 export const getMessages = async (
   chatId: string,
   limit = 50,
   beforeTimestamp?: Timestamp
-): Promise<Message[]> => {
+): Promise<MessageDocument[]> => {
   const db = getDb();
 
   let query = db
@@ -59,7 +42,7 @@ export const getMessages = async (
   const snapshot = await query.get();
 
   return snapshot.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() } as Message))
+    .map((doc) => ({ id: doc.id, ...doc.data() } as MessageDocument))
     .reverse();
 };
 
@@ -67,21 +50,7 @@ export const markAsRead = async (
   chatId: string,
   readerId: string
 ): Promise<void> => {
-  const db = getDb();
-
-  const snapshot = await db
-    .collection('messages')
-    .where('chatId', '==', chatId)
-    .where('read', '==', false)
-    .where('senderId', '!=', readerId)
-    .get();
-
-  const batch = db.batch();
-  snapshot.docs.forEach((doc) => {
-    batch.update(doc.ref, { read: true });
-  });
-
-  await batch.commit();
+  await messageEntity.markAllAsRead(chatId);
 };
 
 export const validateChatAccess = async (
@@ -89,24 +58,12 @@ export const validateChatAccess = async (
   userRole: 'manager' | 'employee',
   chatId: string
 ): Promise<boolean> => {
-  const db = getDb();
   const [id1, id2] = chatId.split('_');
 
-  if (userRole === 'manager') {
-    // Manager must own the employee
-    const employeeId = id2 === userId ? id1 : id2;
-    const employee = await db.collection('employees').doc(employeeId).get();
-    return employee.exists && employee.data()?.managerId === userId;
-  } else {
-    // Employee must be linked to manager
-    const snapshot = await db
-      .collection('employees')
-      .where('userId', '==', userId)
-      .limit(1)
-      .get();
+  // Allow access if the user is one of the participants
+  return userId === id1 || userId === id2;
+};
 
-    if (snapshot.empty) return false;
-    const employee = snapshot.docs[0].data();
-    return chatId.includes(employee.managerId);
-  }
+export const getUnreadMessageCount = async (chatId: string): Promise<number> => {
+  return messageEntity.getUnreadCount(chatId);
 };

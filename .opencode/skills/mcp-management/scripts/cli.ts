@@ -3,7 +3,7 @@
  * MCP Management CLI - Command-line interface for MCP operations
  */
 
-import { MCPClientManager } from './mcp-client.js';
+import { MCPClientManager } from './mcp-client';
 import { writeFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';

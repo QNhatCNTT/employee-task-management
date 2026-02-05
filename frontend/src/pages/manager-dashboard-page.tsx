@@ -1,45 +1,65 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/auth-context';
 import { useToast } from '../contexts/toast-context';
 import { Employee, CreateEmployeeInput, UpdateEmployeeInput } from '../types/employee-types';
 import * as employeeService from '../services/employee-service';
-import { EmployeeList } from '../components/employee/employee-list';
 import { EmployeeForm } from '../components/employee/employee-form';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Users, 
-  UserPlus, 
-  MessageSquare, 
-  LogOut, 
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  UserPlus,
   RefreshCw,
+  Search,
+  Filter,
+  MessageSquare,
+  Edit,
+  Trash2,
+  Clock,
   CheckCircle,
-  Clock
+  Users,
+  UserCheck,
+  UserX,
+  Building2
 } from 'lucide-react';
 
+const ITEMS_PER_PAGE = 8;
+
 export const ManagerDashboardPage = () => {
-  const { user, logout } = useAuth();
   const { success, error: showError } = useToast();
   const navigate = useNavigate();
-  
-  // State
+
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // Dialog state
+  const [employeesLoading, setEmployeesLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [employeePage, setEmployeePage] = useState(1);
 
-  // Fetch employees
   const fetchEmployees = useCallback(async () => {
-    setIsLoading(true);
+    setEmployeesLoading(true);
     try {
       const data = await employeeService.getEmployees();
       setEmployees(data);
@@ -47,7 +67,7 @@ export const ManagerDashboardPage = () => {
       showError('Failed to load employees. Please try again.');
       console.error('Fetch employees error:', err);
     } finally {
-      setIsLoading(false);
+      setEmployeesLoading(false);
     }
   }, [showError]);
 
@@ -55,7 +75,38 @@ export const ManagerDashboardPage = () => {
     fetchEmployees();
   }, [fetchEmployees]);
 
-  // CRUD handlers
+  // Stats calculations
+  const stats = useMemo(() => {
+    const total = employees.length;
+    const active = employees.filter(e => e.setupCompleted).length;
+    const pending = employees.filter(e => !e.setupCompleted).length;
+    const departments = new Set(employees.map(e => e.department)).size;
+    return { total, active, pending, departments };
+  }, [employees]);
+
+  // Filtering
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const matchesSearch =
+        emp.name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
+        emp.email.toLowerCase().includes(employeeSearch.toLowerCase());
+      const matchesDept =
+        departmentFilter === 'all' || emp.department === departmentFilter;
+      return matchesSearch && matchesDept;
+    });
+  }, [employees, employeeSearch, departmentFilter]);
+
+  const totalEmployeePages = Math.ceil(filteredEmployees.length / ITEMS_PER_PAGE);
+  const paginatedEmployees = filteredEmployees.slice(
+    (employeePage - 1) * ITEMS_PER_PAGE,
+    employeePage * ITEMS_PER_PAGE
+  );
+
+  const departments = useMemo(() =>
+    Array.from(new Set(employees.map(e => e.department))).filter(Boolean),
+    [employees]
+  );
+
   const handleAddEmployee = () => {
     setEditingEmployee(null);
     setIsFormOpen(true);
@@ -87,10 +138,6 @@ export const ManagerDashboardPage = () => {
     }
   };
 
-  const handleDeleteClick = (employee: Employee) => {
-    setDeleteTarget(employee);
-  };
-
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     setIsDeleting(true);
@@ -107,117 +154,269 @@ export const ManagerDashboardPage = () => {
     }
   };
 
-  const handleChat = (employee: Employee) => {
-    navigate(`/dashboard/chat?employeeId=${employee.id}`);
+  const handleChat = (employeeId: string) => {
+    navigate(`/dashboard/chat?employeeId=${employeeId}`);
   };
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
-  };
-
-  // Stats calculations
-  const activeCount = employees.filter(e => e.setupCompleted).length;
-  const pendingCount = employees.filter(e => !e.setupCompleted).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Manager Dashboard</h1>
-              <p className="text-sm text-slate-500 mt-1">
-                Welcome back, {user?.phoneNumber || 'Manager'}
-              </p>
-            </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Employee Management</h1>
+          <p className="text-slate-500 mt-1">
+            Manage your team members and their information
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" size="sm" onClick={fetchEmployees} disabled={employeesLoading}>
+            <RefreshCw size={16} className={`mr-2 ${employeesLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={handleAddEmployee}>
+            <UserPlus size={16} className="mr-2" />
+            Add Employee
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={() => navigate('/dashboard/chat')}>
-                <MessageSquare size={18} className="mr-2" />
-                Chat
-              </Button>
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut size={18} className="mr-2" />
-                Logout
-              </Button>
+              <div className="p-2.5 rounded-lg bg-blue-50">
+                <Users size={20} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{stats.total}</p>
+                <p className="text-xs text-slate-500 font-medium">Total Employees</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-emerald-50">
+                <UserCheck size={20} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{stats.active}</p>
+                <p className="text-xs text-slate-500 font-medium">Active</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-amber-50">
+                <UserX size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{stats.pending}</p>
+                <p className="text-xs text-slate-500 font-medium">Pending Setup</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-violet-50">
+                <Building2 size={20} className="text-violet-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{stats.departments}</p>
+                <p className="text-xs text-slate-500 font-medium">Departments</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Employees Table */}
+      <Card className="border-slate-200 shadow-sm">
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h2 className="font-semibold text-slate-900">Team Members</h2>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search..."
+                  className="pl-8 h-9 w-48 text-sm"
+                  value={employeeSearch}
+                  onChange={(e) => {
+                    setEmployeeSearch(e.target.value);
+                    setEmployeePage(1);
+                  }}
+                />
+              </div>
+              <div className="relative">
+                <Filter className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                <select
+                  className="h-9 rounded-md border border-slate-200 bg-white pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={departmentFilter}
+                  onChange={(e) => {
+                    setDepartmentFilter(e.target.value);
+                    setEmployeePage(1);
+                  }}
+                >
+                  <option value="all">All Depts</option>
+                  {departments.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
-      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="bg-white border-slate-200 hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">
-                Total Employees
-              </CardTitle>
-              <Users size={20} className="text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-slate-900">{employees.length}</div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white border-slate-200 hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">
-                Active
-              </CardTitle>
-              <CheckCircle size={20} className="text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-green-600">{activeCount}</div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-white border-slate-200 hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-slate-600">
-                Pending Setup
-              </CardTitle>
-              <Clock size={20} className="text-amber-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-amber-600">{pendingCount}</div>
-            </CardContent>
-          </Card>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50/50">
+                <TableHead className="font-medium">Employee</TableHead>
+                <TableHead className="font-medium">Contact</TableHead>
+                <TableHead className="font-medium">Department</TableHead>
+                <TableHead className="font-medium">Status</TableHead>
+                <TableHead className="font-medium text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {employeesLoading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-32 text-center text-slate-500">
+                    Loading employees...
+                  </TableCell>
+                </TableRow>
+              ) : paginatedEmployees.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-32 text-center text-slate-500">
+                    No employees found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedEmployees.map((employee) => (
+                  <TableRow key={employee.id} className="hover:bg-slate-50/50">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-medium text-sm">
+                          {employee.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-900">{employee.name}</p>
+                          <p className="text-xs text-slate-500">{employee.role}</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <p className="text-slate-700">{employee.email}</p>
+                        {employee.phone && (
+                          <p className="text-slate-500 text-xs">{employee.phone}</p>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="font-normal bg-slate-50">
+                        {employee.department}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {employee.setupCompleted ? (
+                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-0">
+                          <CheckCircle size={12} className="mr-1" />
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-0">
+                          <Clock size={12} className="mr-1" />
+                          Pending
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                          onClick={() => handleChat(employee.id)}
+                          title="Chat"
+                        >
+                          <MessageSquare size={16} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                          onClick={() => handleEditEmployee(employee)}
+                          title="Edit"
+                        >
+                          <Edit size={16} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => setDeleteTarget(employee)}
+                          title="Delete"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
 
-        {/* Employee Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-slate-900">Employees</h2>
-            <div className="flex gap-3">
-              <Button variant="outline" size="sm" onClick={fetchEmployees} disabled={isLoading}>
-                <RefreshCw size={16} className={`mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Button onClick={handleAddEmployee}>
-                <UserPlus size={18} className="mr-2" />
-                Add Employee
-              </Button>
-            </div>
+        {totalEmployeePages > 1 && (
+          <div className="p-4 border-t border-slate-100">
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={() => setEmployeePage(p => Math.max(1, p - 1))}
+                    className={employeePage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                  />
+                </PaginationItem>
+                {Array.from({ length: totalEmployeePages }).map((_, i) => (
+                  <PaginationItem key={i}>
+                    <PaginationLink
+                      isActive={employeePage === i + 1}
+                      onClick={() => setEmployeePage(i + 1)}
+                      className="cursor-pointer"
+                    >
+                      {i + 1}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() => setEmployeePage(p => Math.min(totalEmployeePages, p + 1))}
+                    className={employeePage === totalEmployeePages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           </div>
-
-          <EmployeeList
-            employees={employees}
-            isLoading={isLoading}
-            onEdit={handleEditEmployee}
-            onDelete={handleDeleteClick}
-            onChat={handleChat}
-          />
-        </div>
-      </main>
+        )}
+      </Card>
 
       {/* Add/Edit Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle onClose={() => setIsFormOpen(false)}>
+            <DialogTitle>
               {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
             </DialogTitle>
           </DialogHeader>
@@ -229,13 +428,13 @@ export const ManagerDashboardPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Delete</DialogTitle>
+            <DialogTitle>Delete Employee</DialogTitle>
           </DialogHeader>
-          <p className="text-slate-600 mb-6">
+          <p className="text-slate-600 py-4">
             Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
           </p>
           <div className="flex gap-3 justify-end">

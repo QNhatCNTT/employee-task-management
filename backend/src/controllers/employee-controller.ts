@@ -1,9 +1,10 @@
 import { Response, NextFunction } from 'express';
-import { AuthenticatedRequest } from '../types/express-types.js';
-import * as employeeService from '../services/employee-service.js';
-import { sendInvitationEmail } from '../services/email-service.js';
-import { sendSuccess } from '../utils/response-utils.js';
-import { AppError } from '../middleware/error-handler-middleware.js';
+import { AuthenticatedRequest } from '../types/express-types';
+import * as employeeService from '../services/employee-service';
+import { createEmailProvider } from '../providers/index';
+import { setupTokenEntity } from '../entities/setup-token.entity';
+import { sendSuccess } from '../utils/response-utils';
+import { AppError } from '../middleware/error-handler-middleware';
 
 export const createEmployee = async (
   req: AuthenticatedRequest,
@@ -11,25 +12,44 @@ export const createEmployee = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { name, email, department } = req.body;
+    const { name, email, phone, role } = req.body;
     const managerId = req.userId!;
 
-    if (!name || !email || !department) {
-      throw new AppError('Name, email, and department required', 400);
+    if (!name || !email) {
+      throw new AppError('Name and email are required', 400);
     }
 
-    const result = await employeeService.createEmployee({
+    // Create setup token
+    const employeeId = await employeeService.createEmployee({
       name,
       email,
-      department,
+      phone,
+      role: role as 'employee' | 'manager' | 'admin',
       managerId,
     });
 
-    await sendInvitationEmail(email, name, result.setupToken);
+    // Get the employee record to create a setup token
+    const employee = await employeeService.getEmployeeById(employeeId.employeeId);
+    if (employee) {
+      const setupToken = await setupTokenEntity.createToken(
+        employeeId.userId,
+        'employee_setup',
+        {
+          metadata: {
+            employeeId: employeeId.employeeId,
+            email,
+          },
+        }
+      );
+
+      // Send invitation email
+      const emailProvider = createEmailProvider();
+      await emailProvider.sendInvitation(email, name, setupToken);
+    }
 
     sendSuccess(
       res,
-      { employeeId: result.employeeId },
+      { employeeId: employeeId.employeeId },
       'Employee created, invitation sent',
       201
     );
@@ -82,7 +102,12 @@ export const updateEmployee = async (
   try {
     const { id } = req.params;
     const managerId = req.userId!;
-    const updates = req.body;
+    const { name, phone, description } = req.body;
+
+    const updates: Parameters<typeof employeeService.updateEmployee>[2] = {};
+    if (name) updates.name = name;
+    if (phone) updates.phone = phone;
+    if (description) updates.description = description;
 
     const employee = await employeeService.updateEmployee(id, managerId, updates);
 
@@ -112,6 +137,78 @@ export const deleteEmployee = async (
     }
 
     sendSuccess(res, null, 'Employee deleted');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateEmployeeStatus = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const managerId = req.userId!;
+    const { status } = req.body;
+
+    if (!['active', 'inactive', 'suspended'].includes(status)) {
+      throw new AppError('Invalid status', 400);
+    }
+
+    const employee = await employeeService.updateEmployeeStatus(
+      id,
+      managerId,
+      status as 'active' | 'inactive' | 'suspended'
+    );
+
+    if (!employee) {
+      throw new AppError('Employee not found', 404);
+    }
+
+    sendSuccess(res, employee, 'Employee status updated');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const suspendEmployee = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const managerId = req.userId!;
+
+    const success = await employeeService.suspendEmployee(id, managerId);
+
+    if (!success) {
+      throw new AppError('Employee not found or unauthorized', 404);
+    }
+
+    sendSuccess(res, null, 'Employee suspended');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reactivateEmployee = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const managerId = req.userId!;
+
+    const success = await employeeService.reactivateEmployee(id, managerId);
+
+    if (!success) {
+      throw new AppError('Employee not found or unauthorized', 404);
+    }
+
+    sendSuccess(res, null, 'Employee reactivated');
   } catch (error) {
     next(error);
   }

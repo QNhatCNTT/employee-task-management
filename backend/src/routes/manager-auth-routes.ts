@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { sendCode, verifyCode } from '../controllers/manager-auth-controller.js';
-import { authLimiter } from '../middleware/rate-limiter-middleware.js';
+import { sendCode, verifyCode } from '../controllers/manager-auth-controller';
+import { authLimiter } from '../middleware/rate-limiter-middleware';
 
 const router = Router();
 

@@ -1,172 +1,134 @@
-import { Request, Response, NextFunction } from 'express';
-import { getDb } from '../config/firebase-admin-config.js';
-import { generateOtp, saveOtpByEmail, verifyOtpByEmail } from '../services/otp-service.js';
-import { sendOtpEmail } from '../services/email-service.js';
-import { generateToken } from '../utils/jwt-utils.js';
-import { sendSuccess } from '../utils/response-utils.js';
-import { AppError } from '../middleware/error-handler-middleware.js';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Request, Response, NextFunction } from "express";
+import { generateOtp, saveOtpByEmail, verifyOtpByEmail } from "../services/otp-service";
+import { createEmailProvider } from "../providers/index";
+import { generateToken } from "../utils/jwt-utils";
+import { sendSuccess } from "../utils/response-utils";
+import { AppError } from "../middleware/error-handler-middleware";
+import { setupTokenEntity } from "../entities/setup-token.entity";
+import { employeeEntity } from "../entities/employee.entity";
 
-export const validateSetupToken = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { token } = req.query;
+export const validateSetupToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { token } = req.query;
 
-    if (!token || typeof token !== 'string') {
-      throw new AppError('Token required', 400);
+        if (!token || typeof token !== "string") {
+            throw new AppError("Token required", 400);
+        }
+
+        // Validate using setupTokenEntity
+        const result = await setupTokenEntity.verifyAndConsume(token);
+
+        if (!result.valid || !result.data) {
+            throw new AppError("Invalid or expired token", 400);
+        }
+
+        const metadata = result.data.metadata || {};
+        const employee = await employeeEntity.findById(metadata.employeeId || "");
+
+        if (!employee) {
+            throw new AppError("Employee not found", 404);
+        }
+
+        sendSuccess(res, {
+            name: employee.name,
+            email: employee.email,
+            employeeId: employee.id,
+        });
+    } catch (error) {
+        next(error);
     }
-
-    const db = getDb();
-    const snapshot = await db
-      .collection('employees')
-      .where('setupToken', '==', token)
-      .limit(1)
-      .get();
-
-    if (snapshot.empty) {
-      throw new AppError('Invalid token', 400);
-    }
-
-    const employee = snapshot.docs[0].data();
-
-    if (employee.setupCompleted) {
-      throw new AppError('Account already set up', 400);
-    }
-
-    if (employee.setupTokenExpiry && employee.setupTokenExpiry.toDate() < new Date()) {
-      throw new AppError('Token expired', 400);
-    }
-
-    sendSuccess(res, {
-      name: employee.name,
-      email: employee.email,
-    });
-  } catch (error) {
-    next(error);
-  }
 };
 
-export const completeSetup = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { token, name } = req.body;
+export const completeSetup = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { token, name } = req.body;
 
-    if (!token) {
-      throw new AppError('Token required', 400);
+        if (!token) {
+            throw new AppError("Token required", 400);
+        }
+
+        // Validate token
+        const result = await setupTokenEntity.verifyAndConsume(token);
+
+        if (!result.valid || !result.data) {
+            throw new AppError("Invalid or expired token", 400);
+        }
+
+        const metadata = result.data.metadata || {};
+        const employeeId = metadata.employeeId;
+
+        if (!employeeId) {
+            throw new AppError("Invalid token metadata", 400);
+        }
+
+        const employee = await employeeEntity.findById(employeeId);
+
+        if (!employee) {
+            throw new AppError("Employee not found", 404);
+        }
+
+        // Update employee
+        await employeeEntity.updateInfo(employeeId, {
+            name: name || employee.name,
+        });
+
+        sendSuccess(res, { success: true }, "Account setup complete");
+    } catch (error) {
+        next(error);
     }
-
-    const db = getDb();
-    const snapshot = await db
-      .collection('employees')
-      .where('setupToken', '==', token)
-      .limit(1)
-      .get();
-
-    if (snapshot.empty) {
-      throw new AppError('Invalid token', 400);
-    }
-
-    const employeeDoc = snapshot.docs[0];
-    const employee = employeeDoc.data();
-
-    if (employee.setupCompleted) {
-      throw new AppError('Account already set up', 400);
-    }
-
-    // Update employee
-    await employeeDoc.ref.update({
-      name: name || employee.name,
-      setupCompleted: true,
-      setupToken: null,
-      setupTokenExpiry: null,
-      updatedAt: Timestamp.now(),
-    });
-
-    // Update linked user
-    await db.collection('users').doc(employee.userId).update({
-      name: name || employee.name,
-      updatedAt: Timestamp.now(),
-    });
-
-    sendSuccess(res, { success: true }, 'Account setup complete');
-  } catch (error) {
-    next(error);
-  }
 };
 
-export const sendCode = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { email } = req.body;
+export const sendCode = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { email } = req.body;
 
-    if (!email) {
-      throw new AppError('Email required', 400);
+        if (!email) {
+            throw new AppError("Email required", 400);
+        }
+
+        // Verify employee exists and setup complete
+        const employee = await employeeEntity.findByEmail(email);
+
+        if (!employee || employee.status !== "active") {
+            throw new AppError("Account not found or setup incomplete", 400);
+        }
+
+        const otp = generateOtp();
+        await saveOtpByEmail(email, otp);
+
+        // Use abstract Email provider
+        const emailProvider = createEmailProvider();
+        await emailProvider.sendOtp(email, otp);
+
+        sendSuccess(res, { codeSent: true }, "Access code sent to email");
+    } catch (error) {
+        next(error);
     }
-
-    // Verify employee exists and setup complete
-    const db = getDb();
-    const snapshot = await db
-      .collection('employees')
-      .where('email', '==', email)
-      .where('setupCompleted', '==', true)
-      .limit(1)
-      .get();
-
-    if (snapshot.empty) {
-      throw new AppError('Account not found or setup incomplete', 400);
-    }
-
-    const otp = generateOtp();
-    await saveOtpByEmail(email, otp);
-    
-    // In development, log the OTP
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[DEV] OTP for ${email}: ${otp}`);
-    } else {
-      await sendOtpEmail(email, otp);
-    }
-
-    sendSuccess(res, { codeSent: true }, 'Access code sent to email');
-  } catch (error) {
-    next(error);
-  }
 };
 
-export const verifyCode = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { email, accessCode } = req.body;
+export const verifyCode = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { email, accessCode } = req.body;
 
-    if (!email || !accessCode) {
-      throw new AppError('Email and access code required', 400);
+        if (!email || !accessCode) {
+            throw new AppError("Email and access code required", 400);
+        }
+
+        const result = await verifyOtpByEmail(email, accessCode);
+
+        if (!result.valid || !result.employeeId) {
+            throw new AppError("Invalid or expired access code", 401);
+        }
+
+        // Use employeeId as userId for the token
+        const token = generateToken({
+            userId: result.employeeId,
+            role: "employee",
+            email,
+        });
+
+        sendSuccess(res, { token }, "Authentication successful");
+    } catch (error) {
+        next(error);
     }
-
-    const result = await verifyOtpByEmail(email, accessCode);
-
-    if (!result.valid || !result.userId) {
-      throw new AppError('Invalid or expired access code', 401);
-    }
-
-    const token = generateToken({
-      userId: result.userId,
-      role: 'employee',
-      email,
-    });
-
-    sendSuccess(res, { token }, 'Authentication successful');
-  } catch (error) {
-    next(error);
-  }
 };

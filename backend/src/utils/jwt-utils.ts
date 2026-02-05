@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { UserPayload } from '../types/api-types.js';
-import { envConfig } from '../config/env-config.js';
+import { UserPayload } from '../types/api-types';
+import { envConfig } from '../config/env-config';
 
 const JWT_EXPIRY = '24h';
 

@@ -1,68 +1,85 @@
-import { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
+import { Sidebar } from './sidebar';
+import { SidebarProvider, useSidebar } from '@/contexts/sidebar-context';
+import { cn } from '@/lib/utils'; // Assuming you have a cn utility, otherwise standard className string interpolation
+
+import { useAuth } from '@/contexts/auth-context';
+
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '../../contexts/auth-context';
-import { LogOut, Users, MessageSquare } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 
-interface DashboardLayoutProps {
-  children: ReactNode;
-}
-
-export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
+const DashboardHeader = () => {
   const { user, logout } = useAuth();
-  const location = useLocation();
+  const navigate = useNavigate();
 
-  const navItems = [
-    { path: '/dashboard', label: 'Employees', icon: Users },
-    { path: '/dashboard/chat', label: 'Chat', icon: MessageSquare },
-  ];
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
-    <div className="min-h-screen flex bg-gray-100">
-      {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 text-white flex flex-col">
-        <div className="p-6">
-          <h1 className="text-xl font-bold">Task Manager</h1>
-        </div>
-        <nav className="flex-1 px-4">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path;
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg mb-2 transition-colors ${
-                  isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                }`}
-              >
-                <Icon size={20} />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t border-gray-800">
-          <p className="text-sm text-gray-400 mb-3 truncate">
-            {user?.phoneNumber || user?.email}
-          </p>
-          <Button
-            variant="outline"
-            onClick={logout}
-            className="w-full flex items-center gap-2 border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
-          >
-            <LogOut size={18} />
-            Logout
-          </Button>
-        </div>
-      </aside>
+    <header className="sticky top-0 z-10 w-full h-16 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 flex items-center justify-between">
+      <h2 className="text-lg font-semibold text-slate-800">
+        {user?.role === 'manager' ? 'Manager Portal' : 'Employee Portal'}
+      </h2>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">{children}</div>
-      </main>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 text-sm">
+          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
+            <User size={16} className="text-slate-500" />
+          </div>
+          <div className="hidden md:block text-right">
+            <p className="font-medium text-slate-900 leading-none">
+              {user?.role === 'manager' ? 'Manager' : user?.email?.split('@')[0]}
+            </p>
+            <p className="text-xs text-slate-500 capitalize leading-none mt-1">{user?.role}</p>
+          </div>
+        </div>
+        <div className="h-6 w-px bg-slate-200" />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          className="text-slate-500 hover:text-red-600 hover:bg-red-50"
+        >
+          <LogOut size={18} className="mr-2" />
+          Logout
+        </Button>
+      </div>
+    </header>
+  );
+};
+
+const DashboardContent = () => {
+  const { collapsed } = useSidebar();
+
+  // Add margin based on sidebar state
+  // When collapsed: w-20 (80px), Expanded: w-64 (256px)
+  return (
+    <div className={cn(
+      "min-h-screen bg-slate-50 transition-all duration-300 ease-in-out flex flex-col",
+      collapsed ? "ml-20" : "ml-64"
+    )}>
+      <DashboardHeader />
+
+      {/* Main Page Content */}
+      <div className="flex-1">
+        <Outlet />
+      </div>
     </div>
+  );
+};
+
+export const DashboardLayout = () => {
+  return (
+    <SidebarProvider>
+      <div className="flex min-h-screen bg-slate-50">
+        <Sidebar />
+        <div className="flex-1 w-full">
+          <DashboardContent />
+        </div>
+      </div>
+    </SidebarProvider>
   );
 };

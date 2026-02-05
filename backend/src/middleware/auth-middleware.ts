@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
-import { AuthenticatedRequest } from '../types/express-types.js';
-import { verifyToken } from '../utils/jwt-utils.js';
-import { sendError } from '../utils/response-utils.js';
+import { AuthenticatedRequest } from '../types/express-types';
+import { verifyToken } from '../utils/jwt-utils';
+import { sendError } from '../utils/response-utils';
 
 export const authMiddleware = (
   req: AuthenticatedRequest,

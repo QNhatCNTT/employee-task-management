@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { generateOtp, saveOtp, verifyOtp } from '../services/otp-service.js';
-import { sendSms } from '../services/twilio-sms-service.js';
-import { generateToken } from '../utils/jwt-utils.js';
-import { sendSuccess } from '../utils/response-utils.js';
-import { AppError } from '../middleware/error-handler-middleware.js';
+import { generateOtp, saveOtp, verifyOtp } from '../services/otp-service';
+import { createSmsProvider } from '../providers/index';
+import { generateToken } from '../utils/jwt-utils';
+import { sendSuccess } from '../utils/response-utils';
+import { AppError } from '../middleware/error-handler-middleware';
 
 export const sendCode = async (
   req: Request,
@@ -19,13 +19,10 @@ export const sendCode = async (
 
     const otp = generateOtp();
     await saveOtp(phoneNumber, otp);
-    
-    // In development, log the OTP instead of sending SMS
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[DEV] OTP for ${phoneNumber}: ${otp}`);
-    } else {
-      await sendSms(phoneNumber, `Your access code is: ${otp}`);
-    }
+
+    // Use abstract SMS provider
+    const smsProvider = createSmsProvider();
+    await smsProvider.send(phoneNumber, `Your access code is: ${otp}`);
 
     sendSuccess(res, { codeSent: true }, 'Access code sent');
   } catch (error) {
@@ -62,3 +59,4 @@ export const verifyCode = async (
     next(error);
   }
 };
+

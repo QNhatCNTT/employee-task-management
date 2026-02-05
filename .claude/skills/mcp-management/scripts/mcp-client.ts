@@ -3,8 +3,8 @@
  * MCP Client - Core client for interacting with MCP servers
  */
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
 import { readFile } from 'fs/promises';
 import { resolve } from 'path';
 

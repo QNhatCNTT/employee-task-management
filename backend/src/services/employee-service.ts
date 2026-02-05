@@ -1,27 +1,19 @@
 import crypto from 'crypto';
-import { getDb } from '../config/firebase-admin-config.js';
-import { Timestamp } from 'firebase-admin/firestore';
-import { FirestoreEmployee, FirestoreUser } from '../types/firestore.js';
+import { employeeEntity, EmployeeDocument } from '../entities/employee.entity';
+import { userEntity } from '../entities/user.entity';
 
 interface CreateEmployeeInput {
   name: string;
   email: string;
-  department: string;
-  role?: string;
-  managerId: string;
+  phone?: string;
+  role?: 'employee' | 'manager' | 'admin';
+  managerId?: string;
 }
 
 interface UpdateEmployeeInput {
   name?: string;
-  email?: string;
-  department?: string;
-  role?: string;
   phone?: string;
-  schedule?: {
-    workDays: string[];
-    startTime: string;
-    endTime: string;
-  };
+  description?: string;
 }
 
 export const generateSetupToken = (): string => {
@@ -29,65 +21,41 @@ export const generateSetupToken = (): string => {
 };
 
 export const createEmployee = async (input: CreateEmployeeInput) => {
-  const db = getDb();
-  const setupToken = generateSetupToken();
-
   // Create user record for employee
-  const userData: FirestoreUser = {
-    email: input.email,
-    role: 'employee',
-    name: input.name,
-    createdAt: Timestamp.now(),
-    updatedAt: Timestamp.now(),
-  };
-
-  const userRef = await db.collection('users').add(userData);
+  const userId = await userEntity.createEmployee(input.email, input.name);
 
   // Create employee record
-  const employeeData: FirestoreEmployee = {
-    userId: userRef.id,
-    name: input.name,
-    email: input.email,
-    department: input.department,
-    role: input.role || 'Employee',
-    managerId: input.managerId,
-    isActive: true,
-    setupCompleted: false,
-    setupToken,
-    setupTokenExpiry: Timestamp.fromDate(
-      new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
-    ),
-    createdAt: Timestamp.now(),
-    updatedAt: Timestamp.now(),
-  };
+  const employeeId = await employeeEntity.createEmployee(
+    input.name,
+    input.email,
+    input.phone,
+    input.role || 'employee',
+    input.managerId
+  );
 
-  const employeeRef = await db.collection('employees').add(employeeData);
-
-  return { employeeId: employeeRef.id, setupToken };
+  const setupToken = generateSetupToken();
+  
+  // Store setup token (we'll need to add this to employee entity or a separate collection)
+  // For now, we'll return it for the client to use
+  return { employeeId, userId, setupToken };
 };
 
-export const getEmployeeById = async (employeeId: string, managerId: string) => {
-  const db = getDb();
-  const doc = await db.collection('employees').doc(employeeId).get();
-
-  if (!doc.exists) return null;
-
-  const data = doc.data();
-  if (data?.managerId !== managerId) return null; // Security check
-
-  return { id: doc.id, ...data };
+export const getEmployeeById = async (employeeId: string, managerId?: string) => {
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return null;
+  
+  // Security check - only allow manager to access their employees
+  if (managerId && employee.managerId !== managerId) return null;
+  
+  return employee;
 };
 
-export const listEmployees = async (managerId: string) => {
-  const db = getDb();
-  const snapshot = await db
-    .collection('employees')
-    .where('managerId', '==', managerId)
-    .where('isActive', '==', true)
-    .orderBy('createdAt', 'desc')
-    .get();
-
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+export const listEmployees = async (managerId?: string) => {
+  if (managerId) {
+    return employeeEntity.findByManager(managerId);
+  }
+  return employeeEntity.findByStatus('active');
 };
 
 export const updateEmployee = async (
@@ -95,34 +63,100 @@ export const updateEmployee = async (
   managerId: string,
   updates: UpdateEmployeeInput
 ) => {
-  const db = getDb();
-  const docRef = db.collection('employees').doc(employeeId);
-  const doc = await docRef.get();
-
-  if (!doc.exists) return null;
-  if (doc.data()?.managerId !== managerId) return null;
-
-  await docRef.update({
-    ...updates,
-    updatedAt: Timestamp.now(),
-  });
-
-  return { id: employeeId, ...updates };
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return null;
+  if (employee.managerId !== managerId) return null;
+  
+  const success = await employeeEntity.updateInfo(employeeId, updates);
+  
+  if (success) {
+    return employeeEntity.findById(employeeId);
+  }
+  
+  return null;
 };
 
 export const deleteEmployee = async (employeeId: string, managerId: string) => {
-  const db = getDb();
-  const docRef = db.collection('employees').doc(employeeId);
-  const doc = await docRef.get();
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return false;
+  if (employee.managerId !== managerId) return false;
+  
+  // Soft delete - deactivate
+  return employeeEntity.deactivate(employeeId);
+};
 
-  if (!doc.exists) return false;
-  if (doc.data()?.managerId !== managerId) return false;
+export const updateEmployeeStatus = async (
+  employeeId: string,
+  managerId: string,
+  status: EmployeeDocument['status']
+) => {
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return null;
+  if (employee.managerId !== managerId) return null;
+  
+  const success = await employeeEntity.updateStatus(employeeId, status);
+  
+  if (success) {
+    return employeeEntity.findById(employeeId);
+  }
+  
+  return null;
+};
 
-  // Soft delete
-  await docRef.update({
-    isActive: false,
-    updatedAt: Timestamp.now(),
-  });
+export const updateEmployeeRole = async (
+  employeeId: string,
+  managerId: string,
+  role: EmployeeDocument['role']
+) => {
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return null;
+  if (employee.managerId !== managerId) return null;
+  
+  const success = await employeeEntity.updateRole(employeeId, role);
+  
+  if (success) {
+    return employeeEntity.findById(employeeId);
+  }
+  
+  return null;
+};
 
-  return true;
+export const assignManager = async (
+  employeeId: string,
+  managerId: string,
+  newManagerId: string
+) => {
+  // Check if the requester is a manager
+  const requesterEmployee = await employeeEntity.findById(managerId);
+  if (!requesterEmployee || !['manager', 'admin'].includes(requesterEmployee.role)) {
+    return false;
+  }
+  
+  return employeeEntity.assignManager(employeeId, newManagerId);
+};
+
+export const suspendEmployee = async (employeeId: string, managerId: string) => {
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return false;
+  if (employee.managerId !== managerId) return false;
+  
+  return employeeEntity.suspend(employeeId);
+};
+
+export const reactivateEmployee = async (employeeId: string, managerId: string) => {
+  const employee = await employeeEntity.findById(employeeId);
+  
+  if (!employee) return false;
+  if (employee.managerId !== managerId) return false;
+  
+  return employeeEntity.reactivate(employeeId);
+};
+
+export const getEmployeeByEmail = async (email: string) => {
+  return employeeEntity.findByEmail(email);
 };

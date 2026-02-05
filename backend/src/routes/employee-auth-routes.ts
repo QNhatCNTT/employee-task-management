@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import * as employeeAuthController from '../controllers/employee-auth-controller.js';
-import { authLimiter } from '../middleware/rate-limiter-middleware.js';
+import * as employeeAuthController from '../controllers/employee-auth-controller';
+import { authLimiter } from '../middleware/rate-limiter-middleware';
 
 const router = Router();
 

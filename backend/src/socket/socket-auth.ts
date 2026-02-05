@@ -1,5 +1,5 @@
 import { Socket } from 'socket.io';
-import { verifyToken } from '../utils/jwt-utils.js';
+import { verifyToken } from '../utils/jwt-utils';
 
 export interface AuthenticatedSocket extends Socket {
   userId?: string;

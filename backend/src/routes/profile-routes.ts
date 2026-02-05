@@ -1,67 +1,48 @@
-import { Router } from 'express';
-import { authMiddleware } from '../middleware/auth-middleware.js';
-import { getDb } from '../config/firebase-admin-config.js';
-import { sendSuccess, sendError } from '../utils/response-utils.js';
-import { AuthenticatedRequest } from '../types/express-types.js';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Router } from "express";
+import { authMiddleware } from "../middleware/auth-middleware";
+import { sendSuccess, sendError } from "../utils/response-utils";
+import { AuthenticatedRequest } from "../types/express-types";
+import { employeeEntity } from "../entities/employee.entity";
 
 const router = Router();
 
 router.use(authMiddleware);
 
 // Get my profile (employee)
-router.get('/', async (req: AuthenticatedRequest, res, next) => {
-  try {
-    const db = getDb();
-    const snapshot = await db
-      .collection('employees')
-      .where('userId', '==', req.userId)
-      .limit(1)
-      .get();
+router.get("/", async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const employee = await employeeEntity.findById(req.userId!);
 
-    if (snapshot.empty) {
-      return sendError(res, 'Profile not found', 404);
+        if (!employee) {
+            return sendError(res, "Profile not found", 404);
+        }
+
+        sendSuccess(res, employee);
+    } catch (error) {
+        next(error);
     }
-
-    const employee = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-    sendSuccess(res, employee);
-  } catch (error) {
-    next(error);
-  }
 });
 
 // Update my profile
-router.put('/', async (req: AuthenticatedRequest, res, next) => {
-  try {
-    const { name, phone } = req.body;
-    const db = getDb();
+router.post("/update", async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const { name, phone } = req.body;
 
-    const snapshot = await db
-      .collection('employees')
-      .where('userId', '==', req.userId)
-      .limit(1)
-      .get();
+        const updates: Parameters<typeof employeeEntity.updateInfo>[1] = {};
+        if (name) updates.name = name;
+        if (phone !== undefined) updates.phone = phone;
 
-    if (snapshot.empty) {
-      return sendError(res, 'Profile not found', 404);
+        const success = await employeeEntity.updateInfo(req.userId!, updates);
+
+        if (!success) {
+            return sendError(res, "Profile not found", 404);
+        }
+
+        const employee = await employeeEntity.findById(req.userId!);
+        sendSuccess(res, employee);
+    } catch (error) {
+        next(error);
     }
-
-    const updates: any = { updatedAt: Timestamp.now() };
-    if (name) updates.name = name;
-    if (phone !== undefined) updates.phone = phone;
-
-    await snapshot.docs[0].ref.update(updates);
-
-    // Also update user record
-    await db.collection('users').doc(req.userId!).update({
-      name: name || snapshot.docs[0].data().name,
-      updatedAt: Timestamp.now(),
-    });
-
-    sendSuccess(res, { ...snapshot.docs[0].data(), ...updates });
-  } catch (error) {
-    next(error);
-  }
 });
 
 export default router;

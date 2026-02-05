@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './auth-context';
+import { envConfig } from '../config/env-config';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -23,7 +24,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const socketUrl = envConfig.API_URL;
     const newSocket = io(socketUrl, {
       auth: { token },
       autoConnect: true,
@@ -42,6 +43,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
     newSocket.on('connect_error', (error) => {
       console.error('Socket connection error:', error.message);
+      setIsConnected(false);
     });
 
     setSocket(newSocket);

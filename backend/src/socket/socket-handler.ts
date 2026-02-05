@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
-import { AuthenticatedSocket, socketAuth } from './socket-auth.js';
-import * as chatService from '../services/chat-service.js';
+import { AuthenticatedSocket, socketAuth } from './socket-auth';
+import * as chatService from '../services/chat-service';
 
 export const setupSocketHandlers = (io: SocketIOServer): void => {
   io.use(socketAuth);

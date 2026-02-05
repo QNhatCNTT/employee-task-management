@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import { envConfig } from '../config/env-config.js';
+import { envConfig } from '../config/env-config';
 
 const client = twilio(
   envConfig.TWILIO_ACCOUNT_SID,

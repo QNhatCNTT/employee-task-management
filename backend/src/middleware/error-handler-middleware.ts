@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { sendError } from '../utils/response-utils.js';
+import { sendError } from '../utils/response-utils';
 
 export class AppError extends Error {
   constructor(public message: string, public statusCode: number = 400) {

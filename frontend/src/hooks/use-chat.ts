@@ -40,6 +40,11 @@ export const useChat = (chatId: string | null) => {
       );
     });
 
+    // Listen for more messages
+    socket.on('more-messages', (moreMessages: Message[]) => {
+      setMessages((prev) => [...moreMessages, ...prev]);
+    });
+
     return () => {
       socket.emit('leave-chat', { chatId });
       socket.off('message-history');
@@ -85,5 +90,10 @@ export const useChat = (chatId: string | null) => {
     sendMessage,
     sendTyping,
     markAsRead,
+    loadMore: useCallback((beforeTimestamp: string) => {
+      if (socket && chatId) {
+        socket.emit('load-more', { chatId, beforeTimestamp });
+      }
+    }, [socket, chatId])
   };
 };

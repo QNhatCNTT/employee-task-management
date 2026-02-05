@@ -12,12 +12,7 @@ export function HomePage() {
                 </p>
                 <div className="flex gap-4 justify-center">
                     <Link to="/login">
-                        <Button size="lg">Manager Login</Button>
-                    </Link>
-                    <Link to="/login/employee">
-                        <Button size="lg" variant="outline">
-                            Employee Login
-                        </Button>
+                        <Button size="lg">Login</Button>
                     </Link>
                 </div>
             </div>
